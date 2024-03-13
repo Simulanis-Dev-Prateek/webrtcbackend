@@ -1,7 +1,36 @@
-const { Server } = require("socket.io");
 
-const io = new Server(8888, {
-  cors: true,
+const fs = require('fs');
+// const https = require('https')
+const express = require('express');
+const app = express();
+const socketio = require('socket.io');
+
+
+
+// const { Server } = require("socket.io");
+const https = require('https')
+
+
+const key = fs.readFileSync('cert.key');
+const cert = fs.readFileSync('cert.crt');
+
+const expressServer = https.createServer({key, cert}, app);
+
+// const io = new Server(8000, {
+//   cors: true,
+// });
+const io = socketio(expressServer,{
+  cors: {
+      origin: [
+          "https://localhost:3000",
+          "https://192.168.1.195:3000"
+          // 'https://LOCAL-DEV-IP-HERE' //if using a phone or another computer
+      ],
+      methods: ["GET", "POST"]
+  }
+});
+expressServer.listen(8000,()=>{
+  console.log("server running ")
 });
 
 const emailToSocketIdMap = new Map();
