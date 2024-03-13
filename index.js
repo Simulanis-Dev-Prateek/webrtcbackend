@@ -1,6 +1,6 @@
 const { Server } = require("socket.io");
 
-const io = new Server(8000, {
+const io = new Server(8888, {
   cors: true,
 });
 
