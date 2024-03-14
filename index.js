@@ -11,10 +11,10 @@ const socketio = require('socket.io');
 const https = require('https')
 
 
-const key = fs.readFileSync('cert.key');
-const cert = fs.readFileSync('cert.crt');
+// const key = fs.readFileSync('cert.key');
+// const cert = fs.readFileSync('cert.crt');
 
-const expressServer = https.createServer({key, cert}, app);
+const expressServer = https.createServer(app);
 
 // const io = new Server(8000, {
 //   cors: true,
