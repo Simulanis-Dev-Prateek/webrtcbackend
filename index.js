@@ -21,16 +21,11 @@ const expressServer = https.createServer(app);
 // });
 const io = socketio(expressServer,{
   cors: {
-      origin: [
-          "https://localhost:3000",
-          "https://192.168.1.195:3000",
-          "https://192.168.1.136:3000",
-          'https://20.219.138.185:3000'
-          // 'https://LOCAL-DEV-IP-HERE' //if using a phone or another computer
-      ],
+      origin: true,
       methods: ["GET", "POST"]
   }
 });
+
 expressServer.listen(8888,()=>{
   console.log("server running ")
 });
