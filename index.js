@@ -1,72 +1,140 @@
-
-const fs = require('fs');
-// const https = require('https')
-const express = require('express');
-const app = express();
-const socketio = require('socket.io');
-
-
-
-// const { Server } = require("socket.io");
-const https = require('https')
+import https from "https"
+import { Server } from "socket.io";
+import crypto from "crypto";
+import fs from 'fs';
 
 
 const key = fs.readFileSync('cert.key');
 const cert = fs.readFileSync('cert.crt');
 
-const expressServer = https.createServer(app);
+const httpserver=https.createServer({key,cert});
 
-// const io = new Server(8000, {
-//   cors: true,
-// });
-const io = socketio(expressServer,{
-  cors: {
-      origin: true,
-      methods: ["GET", "POST"]
-  }
+const socketio = new Server(httpserver,{
+    cors: {
+        origin: [`https://192.168.1.136:5173`]
+    }
 });
 
-expressServer.listen(8888,()=>{
-  console.log("server running ")
+const socketroom=new Map();
+const socketusername=new Map();
+const roomhost=new Map();
+socketio.on("connection", (socket) => {
+    console.log(`connected to client of id ${socket.id}`);
+    console.log(`Total connected sockets: ${socketio.sockets.sockets.size}`);
+    socket.on("create-room",()=>{
+        const es = crypto.randomBytes(128).toString('base64').slice(0,20);
+        let code = "";
+        let x = 0;
+        for(let i=0; i<20 && code.length<=11; i++){
+            if((es[i]>='a' && es[i]<='z') || (es[i]>='A' && es[i]<='Z')|| (es[i]>='0' && es[i]<'9')){
+                code+=es[i];
+                x++;
+            }
+            if(x===3){
+                code+='-';
+                x=0;
+            }
+        }
+        code=code.slice(0,-1);
+        socket.emit("create-room",code);
+        console.log("room created");
+        
+    });
+    socket.on("check-meet",(code)=>{
+        if (socketio.sockets.adapter.rooms.has(code)) {
+            socket.emit("check-meet", true);
+        }
+        else {
+            socket.emit("check-meet", false);
+        }
+    })
+    socket.on("join-meet",({code,type,name})=>{
+        socket.join(code);
+        socketroom.set(socket.id,code);
+        socketusername.set(socket.id,name);
+        if(type==="host"){
+            roomhost.set(code,socket.id);
+        }
+        socket.emit("join-meet");
+    })
+
+    //sending offer to new user from existing
+    socket.on("redirectoffers",({to,offer,selfname})=>{
+        socket.to(to).emit("offerscame",{offer,from:socket.id,remotename:selfname});
+    })
+
+    //triggering existing users to send offers to new user
+    socket.on("sendoffers",({code,selfname})=>{
+        socket.to(code).emit("sendoffers",{to:socket.id,remotename:selfname});
+    })
+    
+
+    //sending answers - both
+    socket.on("sendAnswer",({to,myanswer })=>{
+        socket.to(to).emit("sendAnswer",{answer:myanswer,from:socket.id});
+    })
+
+
+    //handling negotiation
+    socket.on("peer:negoNeeded",({offer,to})=>{
+        socket.to(to).emit("peer:negoNeeded",{from:socket.id,offer});
+    })
+
+    socket.on("peer:negodone",({to,answer})=>{
+        socket.to(to).emit("peer:negofinal",{from:socket.id,answer})
+    })
+
+    socket.on("stopvideo",(code)=>{
+        socket.to(code).emit("stopvideo",socket.id);
+    })
+    socket.on("stopaudio",(code)=>{
+        socket.to(code).emit("stopaudio",socket.id);
+    })
+    socket.on("stopscreen",(code)=>{
+        socket.to(code).emit("stopscreen", socket.id);
+    })
+    socket.on("trackinfo",({id,code})=>{
+        socket.to(code).emit("trackinfo",{id,from:socket.id});
+    })
+    socket.on("sendtrack",({id,from})=>{
+        socket.to(from).emit("sendtrack",{id,from:socket.id});
+    })
+    //asking permission of host to enter
+    socket.on("askhost",({code,name})=>{
+        let temphost=roomhost.get(code);
+        socket.to(temphost).emit("askhost",{name,to:socket.id});
+        console.log("asking to ",temphost)
+    })
+    socket.on("hostdecision",({answer,to})=>{
+        socket.to(to).emit("hostdecision",answer);
+    })
+    //sending chat messages
+    socket.on("chatmessage",({uName,message})=>{
+        let room=socketroom.get(socket.id);
+        socket.to(room).emit("chatmessage", { uName, message });
+    })
+    socket.on("handonoff",({type,code})=>{
+        socket.to(code).emit("handonoff",{type,from:socket.id});
+    })
+    socket.on("disconnect",()=>{
+        console.log("socket disconnected");
+        if(socketroom.get(socket.id)){
+            socket.to(socketroom.get(socket.id)).emit("disconnectuser", socket.id);
+            socketroom.delete(socket.id)
+            socketusername.delete(socket.id);
+            let temproom = socketroom.get(socket.id);
+            if (roomhost.get(temproom) === socket.id) {
+                roomhost.delete(temproom);
+            }
+        }
+        
+        
+        
+    })
 });
 
-const emailToSocketIdMap = new Map();
-const socketidToEmailMap = new Map();
-
-let roomcount=[]
-io.on("connection", (socket) => {
-  console.log(`Socket Connected`, socket.id);
-  socket.on("room:join", (data) => {
-    const { email, room } = data;
-    emailToSocketIdMap.set(email, socket.id);
-    socketidToEmailMap.set(socket.id, email);
-    io.to(room).emit("user:joined", { email, id: socket.id });
-    roomcount.push(email)
-    console.log("in room--------------------------------------",roomcount)
-    socket.join(room);
-    io.to(socket.id).emit("room:join", data);
-  });
-
-  socket.on("user:call", ({ to, offer }) => {
-    io.to(to).emit("incomming:call", { from: socket.id, offer });
-  });
-
-  socket.on("user:callfromuser", ({ to, offer }) => {
-    io.to(to).emit("incomming:callfromuser", { from: socket.id, offer });
-  });
 
 
-  socket.on("call:accepted", ({ to, ans }) => {
-    io.to(to).emit("call:accepted", { from: socket.id, ans });
-  });
-
-  socket.on("peer:nego:needed", ({ to, offer }) => {
-    console.log("peer:nego:needed", offer);
-    io.to(to).emit("peer:nego:needed", { from: socket.id, offer });
-  });
-
-  socket.on("peer:nego:done", ({ to, ans }) => {
-    console.log("peer:nego:done", ans);
-    io.to(to).emit("peer:nego:final", { from: socket.id, ans });
-  });
-});
+httpserver.listen(8888,()=>{
+    console.log(`server is listening to ${8888} `);
+})
